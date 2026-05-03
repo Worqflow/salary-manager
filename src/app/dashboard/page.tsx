@@ -1,67 +1,95 @@
-import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { redirect } from 'next/navigation'
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 export default async function DashboardPage() {
-  const supabase = await createServerSupabaseClient()
+  const supabase = await createServerSupabaseClient();
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const [staffResult, salaryMonthResult, salaryLinesResult] = await Promise.all([
+    supabase.from("staff").select("id, is_active"),
+    supabase
+      .from("salary_months")
+      .select("id, month_label, status")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from("salary_lines").select("gross, net_pay"),
+  ]);
 
-  if (!user) redirect('/login')
+  const staff = staffResult.data ?? [];
+  const activeStaff = staff.filter((s) => s.is_active).length;
+  const totalStaff = staff.length;
 
-  const { data: staff } = await supabase
-    .from('staff')
-    .select('full_name, position, is_active')
-    .eq('is_active', true)
-    .order('full_name')
+  const latestMonth = salaryMonthResult.data;
+
+  const lines = salaryLinesResult.data ?? [];
+  const totalGross = lines.reduce((sum, l) => sum + (l.gross ?? 0), 0);
+  const totalNet = lines.reduce((sum, l) => sum + (l.net_pay ?? 0), 0);
+
+  function formatNaira(amount: number) {
+    return "₦" + amount.toLocaleString("en-NG", { maximumFractionDigits: 0 });
+  }
 
   return (
-    <main style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+    <div className="page">
+      <div className="page-header">
         <div>
-          <h1 style={{ margin: 0 }}>Salary Manager</h1>
-          <p style={{ color: '#666', margin: '0.25rem 0 0' }}>{user.email}</p>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="page-subtitle">Overview of your school payroll at a glance</p>
         </div>
-        <form action="/auth/signout" method="post">
-          <button style={{
-            padding: '0.5rem 1rem',
-            border: '1px solid #ddd',
-            borderRadius: '8px',
-            background: 'white',
-            cursor: 'pointer'
-          }}>
-            Sign out
-          </button>
-        </form>
+        <a href="/dashboard/staff" className="btn-primary">
+          Manage Staff
+        </a>
       </div>
 
-      <div style={{
-        background: 'white',
-        border: '1px solid #eee',
-        borderRadius: '12px',
-        overflow: 'hidden'
-      }}>
-        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #eee' }}>
-          <h2 style={{ margin: 0, fontSize: '1rem' }}>
-            Active Staff — {staff?.length ?? 0} members
-          </h2>
+      <div className="metrics-grid">
+        <div className="metric-card">
+          <div className="metric-label">Total Staff</div>
+          <div className="metric-value">{totalStaff}</div>
+          <div className="metric-sub">{activeStaff} active</div>
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-          <thead>
-            <tr style={{ background: '#fafafa' }}>
-              <th style={{ padding: '0.75rem 1.5rem', textAlign: 'left', color: '#666', fontWeight: 500 }}>Name</th>
-              <th style={{ padding: '0.75rem 1.5rem', textAlign: 'left', color: '#666', fontWeight: 500 }}>Position</th>
-            </tr>
-          </thead>
-          <tbody>
-            {staff?.map((s) => (
-              <tr key={s.full_name} style={{ borderTop: '1px solid #eee' }}>
-                <td style={{ padding: '0.75rem 1.5rem', fontWeight: 500 }}>{s.full_name}</td>
-                <td style={{ padding: '0.75rem 1.5rem', color: '#666' }}>{s.position}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+        <div className="metric-card">
+          <div className="metric-label">Current Month</div>
+          <div className="metric-value" style={{ fontSize: "1.5rem" }}>
+            {latestMonth?.month_label ?? "—"}
+          </div>
+          <div className="metric-sub">
+            {latestMonth ? (
+              <span className={`badge badge-${latestMonth.status}`}>
+                {latestMonth.status}
+              </span>
+            ) : (
+              "No salary month"
+            )}
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Total Gross</div>
+          <div className="metric-value" style={{ fontSize: "1.5rem" }}>
+            {formatNaira(totalGross)}
+          </div>
+          <div className="metric-sub">Current month</div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-label">Total Net Pay</div>
+          <div className="metric-value" style={{ fontSize: "1.5rem" }}>
+            {formatNaira(totalNet)}
+          </div>
+          <div className="metric-sub">After PAYE &amp; deductions</div>
+        </div>
       </div>
-    </main>
-  )
+
+      <div className="card" style={{ marginTop: "2rem" }}>
+        <div className="card-header">
+          <h2 className="card-title">Quick Actions</h2>
+        </div>
+        <div className="card-body" style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+          <a href="/dashboard/staff" className="btn-primary">Manage Staff</a>
+          <a href="/dashboard/payroll" className="btn-secondary">View Payroll</a>
+          <a href="/dashboard/exports" className="btn-secondary">Export Files</a>
+        </div>
+      </div>
+    </div>
+  );
 }

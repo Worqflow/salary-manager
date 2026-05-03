@@ -1,135 +1,90 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { createClient } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useState } from "react";
+import { createClient } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const supabase = createClient()
-  const router = useRouter()
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
+    try {
+      const supabase = createClient();
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-
-    if (error) {
-      setError(error.message)
-      setLoading(false)
-      return
+      if (authError) throw authError;
+      router.push("/dashboard");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
     }
-
-    router.push('/dashboard')
-    router.refresh()
   }
 
   return (
-    <main style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontFamily: 'sans-serif',
-      background: '#f5f5f5'
-    }}>
-      <div style={{
-        background: 'white',
-        padding: '2.5rem',
-        borderRadius: '12px',
-        width: '100%',
-        maxWidth: '400px',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
-      }}>
-        <h1 style={{ marginBottom: '0.25rem', fontSize: '1.5rem' }}>
-          Salary Manager
-        </h1>
-        <p style={{ color: '#666', marginBottom: '2rem', fontSize: '0.9rem' }}>
-          Sign in to your school account
-        </p>
+    <div className="login-page">
+      <div className="login-card card">
+        <div className="login-logo">
+          <span className="topbar-brand-accent">Salary</span>Manager
+        </div>
+        <p className="login-subtitle">School Payroll Management</p>
 
-        <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
-              Email
+        <form onSubmit={handleSubmit} className="login-form">
+          <div className="form-group">
+            <label className="form-label" htmlFor="email">
+              Email Address
             </label>
             <input
+              id="email"
               type="email"
+              className="form-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              style={{
-                width: '100%',
-                padding: '0.65rem 0.75rem',
-                border: '1px solid #ddd',
-                borderRadius: '8px',
-                fontSize: '1rem',
-                boxSizing: 'border-box'
-              }}
+              autoComplete="email"
+              placeholder="you@school.edu"
             />
           </div>
 
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="password">
               Password
             </label>
             <input
+              id="password"
               type="password"
+              className="form-input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              style={{
-                width: '100%',
-                padding: '0.65rem 0.75rem',
-                border: '1px solid #ddd',
-                borderRadius: '8px',
-                fontSize: '1rem',
-                boxSizing: 'border-box'
-              }}
+              autoComplete="current-password"
+              placeholder="••••••••"
             />
           </div>
 
-          {error && (
-            <p style={{
-              color: '#c0392b',
-              fontSize: '0.85rem',
-              marginBottom: '1rem',
-              background: '#fdf0ee',
-              padding: '0.65rem',
-              borderRadius: '6px'
-            }}>
-              {error}
-            </p>
-          )}
+          {error && <p className="form-error">{error}</p>}
 
           <button
             type="submit"
+            className="btn-primary login-submit"
             disabled={loading}
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              background: loading ? '#aaa' : '#1D9E75',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '1rem',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontWeight: '500'
-            }}
           >
-            {loading ? 'Signing in...' : 'Sign in'}
+            {loading ? "Signing in…" : "Sign In"}
           </button>
         </form>
       </div>
-    </main>
-  )
+    </div>
+  );
 }
