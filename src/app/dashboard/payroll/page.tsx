@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import Link from 'next/link';
 
@@ -21,11 +21,10 @@ interface SalaryLine {
   staff_id: string;
   basic: number;
   bonus: number;
-  gross: number;       // generated column
+  gross: number;
   paye: number;
   deduction: number;
-  net_pay: number;     // generated column
-  // joined
+  net_pay: number;
   staff: {
     id: string;
     surname: string;
@@ -46,14 +45,16 @@ interface EditState {
   deduction: string;
 }
 
-// ─── PAYE helper (Nigerian simplified brackets) ──────────────────────────────
+interface StaffSeed {
+  id: string;
+  basic: number | null;
+}
+
+// ─── PAYE helper (Nigerian progressive brackets) ──────────────────────────────
 
 function computePAYE(gross: number): number {
-  // Nigerian PAYE: 1% of gross for gross ≤ 30,000/month
-  // Above that, progressive: 7%, 11%, 15%, 19%, 21%, 24%
-  // Using annual brackets (multiply monthly gross × 12, divide result by 12)
   const annual = gross * 12;
-  const relief = Math.max(200000, 0.01 * annual) + 0.2 * annual; // CRA
+  const relief = Math.max(200000, 0.01 * annual) + 0.2 * annual;
   const taxable = Math.max(0, annual - relief);
 
   const brackets = [
@@ -77,8 +78,6 @@ function computePAYE(gross: number): number {
   return Math.round(tax / 12);
 }
 
-// ─── Month navigator ─────────────────────────────────────────────────────────
-
 const MONTHS = [
   'January','February','March','April','May','June',
   'July','August','September','October','November','December',
@@ -87,10 +86,10 @@ const MONTHS = [
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function PayrollPage() {
-  const supabase = createBrowserClient(
+  const supabase = useMemo(() => createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  ), []);
 
   const [schoolId, setSchoolId] = useState<string | null>(null);
   const [salaryMonth, setSalaryMonth] = useState<SalaryMonth | null>(null);
@@ -101,7 +100,10 @@ export default function PayrollPage() {
   const [loading, setLoading] = useState(true);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [confirmLock, setConfirmLock] = useState(false);
-  const [navMonth, setNavMonth] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear() });
+  const [navMonth, setNavMonth] = useState({
+    month: new Date().getMonth() + 1,
+    year: new Date().getFullYear(),
+  });
   const [search, setSearch] = useState('');
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('active');
 
@@ -114,9 +116,8 @@ export default function PayrollPage() {
         .select('school_id')
         .eq('id', data.user.id)
         .single();
-      if (u) setSchoolId(u.school_id);
+      if (u) setSchoolId((u as { school_id: string }).school_id);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Load / create salary month ──────────────────────────────────────────────
@@ -125,7 +126,6 @@ export default function PayrollPage() {
     setLoading(true);
     setEditRow(null);
 
-    // Find or create salary_month
     let { data: sm } = await supabase
       .from('salary_months')
       .select('*')
@@ -143,7 +143,6 @@ export default function PayrollPage() {
       sm = created;
 
       if (sm) {
-        // Seed salary lines from active staff
         const { data: staff } = await supabase
           .from('staff')
           .select('id, basic')
@@ -151,8 +150,8 @@ export default function PayrollPage() {
           .eq('is_active', true);
 
         if (staff && staff.length > 0) {
-          const seeds = staff.map((s: any) => ({
-            salary_month_id: sm!.id,
+          const seeds = (staff as StaffSeed[]).map(s => ({
+            salary_month_id: (sm as SalaryMonth).id,
             staff_id: s.id,
             basic: s.basic ?? 0,
             bonus: 0,
@@ -164,11 +163,10 @@ export default function PayrollPage() {
       }
     }
 
-    setSalaryMonth(sm);
+    setSalaryMonth(sm as SalaryMonth | null);
 
     if (!sm) { setLoading(false); return; }
 
-    // Load lines with staff + bank join
     const { data: linesData } = await supabase
       .from('salary_lines')
       .select(`
@@ -179,7 +177,7 @@ export default function PayrollPage() {
           banks ( name )
         )
       `)
-      .eq('salary_month_id', sm.id)
+      .eq('salary_month_id', (sm as SalaryMonth).id)
       .order('staff(surname)');
 
     setLines((linesData as SalaryLine[]) ?? []);
@@ -190,13 +188,24 @@ export default function PayrollPage() {
     if (schoolId) loadMonth(navMonth.month, navMonth.year);
   }, [schoolId, navMonth, loadMonth]);
 
-  // ── Toast helper ────────────────────────────────────────────────────────────
+  // ── Toast ─────────────────────────────────────────────────────────────────
   function toast(msg: string) {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
   }
 
-  // ── Edit helpers ────────────────────────────────────────────────────────────
+  // ── Edit helpers ──────────────────────────────────────────────────────────
+  // u2500u2500 Edit field handlers u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+  function onBasicChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setEditState(prev => ({ ...prev, basic: e.target.value }));
+  }
+  function onBonusChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setEditState(prev => ({ ...prev, bonus: e.target.value }));
+  }
+  function onDeductionChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setEditState(prev => ({ ...prev, deduction: e.target.value }));
+  }
+
   function startEdit(line: SalaryLine) {
     if (salaryMonth?.status === 'locked') return;
     setEditRow(line.id);
@@ -231,7 +240,7 @@ export default function PayrollPage() {
 
   function cancelEdit() { setEditRow(null); }
 
-  // ── Lock / Unlock ───────────────────────────────────────────────────────────
+  // ── Lock / Unlock ─────────────────────────────────────────────────────────
   async function toggleLock() {
     if (!salaryMonth) return;
     const newStatus = salaryMonth.status === 'locked' ? 'open' : 'locked';
@@ -251,27 +260,27 @@ export default function PayrollPage() {
     setConfirmLock(false);
   }
 
-  // ── Derived values ──────────────────────────────────────────────────────────
+  // ── Derived ───────────────────────────────────────────────────────────────
   const isLocked = salaryMonth?.status === 'locked';
 
   const filteredLines = lines.filter(l => {
     const name = `${l.staff?.surname} ${l.staff?.first_name}`.toLowerCase();
     const matchesSearch = name.includes(search.toLowerCase());
     const matchesActive =
-      filterActive === 'all' ? true :
-      filterActive === 'active' ? l.staff?.is_active :
+      filterActive === 'all'      ? true :
+      filterActive === 'active'   ? l.staff?.is_active :
       !l.staff?.is_active;
     return matchesSearch && matchesActive;
   });
 
   const totals = filteredLines.reduce(
     (acc, l) => ({
-      basic: acc.basic + l.basic,
-      bonus: acc.bonus + l.bonus,
-      gross: acc.gross + l.gross,
-      paye: acc.paye + l.paye,
+      basic:     acc.basic     + l.basic,
+      bonus:     acc.bonus     + l.bonus,
+      gross:     acc.gross     + l.gross,
+      paye:      acc.paye      + l.paye,
       deduction: acc.deduction + l.deduction,
-      net_pay: acc.net_pay + l.net_pay,
+      net_pay:   acc.net_pay   + l.net_pay,
     }),
     { basic: 0, bonus: 0, gross: 0, paye: 0, deduction: 0, net_pay: 0 }
   );
@@ -280,21 +289,19 @@ export default function PayrollPage() {
     return '₦' + n.toLocaleString('en-NG');
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="page">
-      {/* Toast */}
-      {toastMsg && (
-        <div className="toast" role="alert">{toastMsg}</div>
-      )}
+      {toastMsg && <div className="toast" role="alert">{toastMsg}</div>}
 
-      {/* Page header */}
       <div className="page-header">
         <div>
           <h1>Payroll</h1>
           <p className="page-subtitle">
             {MONTHS[navMonth.month - 1]} {navMonth.year}
-            {isLocked && <span className="badge badge-warning" style={{ marginLeft: 8 }}>Locked</span>}
+            {isLocked && (
+              <span className="badge badge-warning" style={{ marginLeft: 8 }}>Locked</span>
+            )}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -402,21 +409,17 @@ export default function PayrollPage() {
                 const isEditing = editRow === line.id;
                 const fullName = `${line.staff?.surname} ${line.staff?.first_name}${line.staff?.middle_name ? ' ' + line.staff.middle_name : ''}`;
 
-                // Live preview while editing
-                const previewBasic = isEditing ? (Number(editState.basic) || 0) : line.basic;
-                const previewBonus = isEditing ? (Number(editState.bonus) || 0) : line.bonus;
-                const previewDeduction = isEditing ? (Number(editState.deduction) || 0) : line.deduction;
-                const previewGross = previewBasic + previewBonus;
-                const previewPaye = isEditing ? computePAYE(previewGross) : line.paye;
-                const previewNet = previewGross - previewPaye - previewDeduction;
+                const previewBasic      = isEditing ? (Number(editState.basic)     || 0) : line.basic;
+                const previewBonus      = isEditing ? (Number(editState.bonus)     || 0) : line.bonus;
+                const previewDeduction  = isEditing ? (Number(editState.deduction) || 0) : line.deduction;
+                const previewGross      = previewBasic + previewBonus;
+                const previewPaye       = isEditing ? computePAYE(previewGross) : line.paye;
+                const previewNet        = previewGross - previewPaye - previewDeduction;
 
                 return (
                   <tr
                     key={line.id}
-                    className={`
-                      ${isEditing ? 'row-editing' : ''}
-                      ${!line.staff?.is_active ? 'row-inactive' : ''}
-                    `}
+                    className={`${isEditing ? 'row-editing' : ''} ${!line.staff?.is_active ? 'row-inactive' : ''}`}
                   >
                     <td className="sn-col">{idx + 1}</td>
                     <td>
@@ -427,14 +430,13 @@ export default function PayrollPage() {
                     </td>
                     <td>{line.staff?.position}</td>
 
-                    {/* Editable fields */}
                     <td className="num-col">
                       {isEditing ? (
                         <input
                           className="cell-input"
                           type="number"
                           value={editState.basic}
-                          onChange={e => setEditState(s => ({ ...s, basic: e.target.value }))}
+                          onChange={onBasicChange}
                         />
                       ) : (
                         line.basic.toLocaleString()
@@ -446,14 +448,13 @@ export default function PayrollPage() {
                           className="cell-input"
                           type="number"
                           value={editState.bonus}
-                          onChange={e => setEditState(s => ({ ...s, bonus: e.target.value }))}
+                          onChange={onBonusChange}
                         />
                       ) : (
                         line.bonus.toLocaleString()
                       )}
                     </td>
 
-                    {/* Computed columns */}
                     <td className="num-col">{previewGross.toLocaleString()}</td>
                     <td className="num-col paye-col">{previewPaye.toLocaleString()}</td>
 
@@ -463,14 +464,14 @@ export default function PayrollPage() {
                           className="cell-input"
                           type="number"
                           value={editState.deduction}
-                          onChange={e => setEditState(s => ({ ...s, deduction: e.target.value }))}
+                          onChange={onDeductionChange}
                         />
                       ) : (
                         line.deduction.toLocaleString()
                       )}
                     </td>
 
-                    <td className={`num-col net-col ${previewNet < 0 ? 'net-negative' : ''}`}>
+                    <td className={`num-col net-col${previewNet < 0 ? ' net-negative' : ''}`}>
                       {previewNet.toLocaleString()}
                     </td>
 
@@ -485,13 +486,12 @@ export default function PayrollPage() {
                             >
                               {saving ? '…' : 'Save'}
                             </button>
-                            <button className="btn-ghost btn-sm" onClick={cancelEdit}>Cancel</button>
+                            <button className="btn-ghost btn-sm" onClick={cancelEdit}>
+                              Cancel
+                            </button>
                           </div>
                         ) : (
-                          <button
-                            className="btn-ghost btn-sm"
-                            onClick={() => startEdit(line)}
-                          >
+                          <button className="btn-ghost btn-sm" onClick={() => startEdit(line)}>
                             Edit
                           </button>
                         )}
@@ -524,7 +524,7 @@ export default function PayrollPage() {
             <h2>{isLocked ? 'Unlock Month?' : 'Lock Month?'}</h2>
             <p>
               {isLocked
-                ? 'Unlocking will allow edits to this month\'s payroll again.'
+                ? "Unlocking will allow edits to this month's payroll again."
                 : `Locking ${MONTHS[navMonth.month - 1]} ${navMonth.year} will prevent further edits. You can unlock it later.`
               }
             </p>
