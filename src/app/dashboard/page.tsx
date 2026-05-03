@@ -1,4 +1,9 @@
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import type { Database } from "@/lib/supabase";
+
+type SalaryMonth = Database["public"]["Tables"]["salary_months"]["Row"];
+type SalaryLine = Database["public"]["Tables"]["salary_lines"]["Row"];
+type Staff = Database["public"]["Tables"]["staff"]["Row"];
 
 const MONTH_NAMES = [
   "", "January", "February", "March", "April", "May", "June",
@@ -19,9 +24,9 @@ export default async function DashboardPage() {
       .maybeSingle(),
   ]);
 
-  const staff = staffResult.data ?? [];
+  const staff = (staffResult.data ?? []) as Pick<Staff, "id" | "is_active">[];
   const activeStaff = staff.filter((s) => s.is_active).length;
-  const latestMonth = salaryMonthResult.data;
+  const latestMonth = salaryMonthResult.data as Pick<SalaryMonth, "id" | "month" | "year" | "status"> | null;
 
   let totalGross = 0;
   let totalNet = 0;
@@ -30,8 +35,9 @@ export default async function DashboardPage() {
       .from("salary_lines")
       .select("gross, net_pay")
       .eq("salary_month_id", latestMonth.id);
-    totalGross = lines?.reduce((sum, l) => sum + (l.gross ?? 0), 0) ?? 0;
-    totalNet   = lines?.reduce((sum, l) => sum + (l.net_pay ?? 0), 0) ?? 0;
+    const typedLines = (lines ?? []) as Pick<SalaryLine, "gross" | "net_pay">[];
+    totalGross = typedLines.reduce((sum, l) => sum + (l.gross ?? 0), 0);
+    totalNet   = typedLines.reduce((sum, l) => sum + (l.net_pay ?? 0), 0);
   }
 
   const fmt = (n: number) =>
