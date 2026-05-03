@@ -8,11 +8,21 @@ export type Database = {
           id: string
           school_id: string
           department_id: string | null
-          full_name: string
+          surname: string
+          first_name: string
+          middle_name: string | null
           position: string | null
+          email: string | null
+          phone: string | null
+          tax_id: string | null
           account_number: string | null
+          account_name: string | null
           bank_id: string | null
+          pension_pin: string | null
+          nhf_number: string | null
+          staff_number: string | null
           is_active: boolean
+          needs_review: boolean
           created_at: string
         }
       }
@@ -61,6 +71,14 @@ export type Database = {
           id: string
           name: string
           sort_code: string | null
+        }
+      }
+      users: {
+        Row: {
+          id: string
+          school_id: string
+          email: string
+          role: string
         }
       }
     }
